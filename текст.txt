@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Радар БПЛА Пермь — Мониторинг угроз</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Fira Code', 'monospace']
+                    },
+                    colors: {
+                        darkBg: '#080c14',
+                        glassBg: 'rgba(13, 20, 36, 0.82)',
+                        glassBorder: 'rgba(255, 255, 255, 0.08)',
+                        accentCyan: '#0ea5e9',
+                        accentEmerald: '#10b981',
+                        accentAmber: '#f59e0b',
+                        accentRed: '#ef4444'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Font Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #080c14;
+            color: #f8fafc;
+            overflow: hidden;
+        }
+
+        /* Leaflet Dark Theme Adjustments */
+        .leaflet-container {
+            background: #060911 !important;
+            font-family: inherit;
+        }
+
+        .leaflet-tile-pane {
+            filter: brightness(0.7) contrast(1.2) saturate(0.8);
+        }
+
+        /* Premium Glassmorphism Cards */
+        .glass-panel {
+            background: rgba(12, 18, 32, 0.82);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+        }
+
+        .glass-btn {
+            background: rgba(22, 32, 54, 0.75);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s ease-out;
+        }
+        .glass-btn:hover {
+            background: rgba(30, 43, 72, 0.9);
+            border-color: rgba(14, 165, 233, 0.4);
+            transform: translateY(-1px);
+        }
+        .glass-btn:active {
+            transform: translateY(0) scale(0.97);
+        }
+
+        /* Plane/Drone Icon Rotation Wrapper */
+        .plane-icon-wrapper {
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Radar Pulse Visual */
+        @keyframes radar-pulse {
+            0% { transform: scale(0.7); opacity: 0.8; }
+            50% { transform: scale(1.4); opacity: 0.15; }
+            100% { transform: scale(0.7); opacity: 0.8; }
+        }
+        .radar-danger-pulse {
+            animation: radar-pulse 2s infinite ease-in-out;
+        }
+
+        /* Leaflet Popup Styling */
+        .leaflet-popup-content-wrapper {
+            background: rgba(13, 20, 36, 0.95) !important;
+            backdrop-filter: blur(14px) !important;
+            color: #f8fafc !important;
+            border: 1px solid rgba(255, 255, 255, 0.12) !important;
+            border-radius: 1rem !important;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.7) !important;
+            padding: 2px !important;
+        }
+        .leaflet-popup-tip {
+            background: rgba(13, 20, 36, 0.95) !important;
+        }
+
+        /* Toast Popup Animation */
+        @keyframes toast-slide {
+            0% { transform: translateY(-20px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        .toast-active {
+            animation: toast-slide 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+    </style>
+</head>
+<body class="h-full w-full relative select-none">
+
+    <!-- Top Main Header & Branding -->
+    <header class="absolute top-3 left-3 right-3 z-[1000] max-w-7xl mx-auto">
+        <div class="glass-panel rounded-2xl p-3 md:px-5 md:py-3.5 flex flex-col md:flex-row items-center justify-between gap-3">
+            
+            <!-- Branding / Logo & Telegram Link -->
+            <div class="flex items-center justify-between w-full md:w-auto gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-600 to-cyan-400 flex items-center justify-center text-white shadow-lg shadow-sky-500/20">
+                        <i class="fa-solid fa-radar text-lg animate-spin" style="animation-duration: 8s;"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="font-bold text-base md:text-lg tracking-wide text-white">Радар БПЛА Пермь</h1>
+                            <span class="bg-red-500/10 text-red-400 border border-red-500/20 text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wider">Мониторинг</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400">Система оперативного информирования об угрозах</p>
+                    </div>
+                </div>
+
+                <!-- Telegram Button -->
+                <a href="https://t.me" target="_blank" rel="noopener noreferrer" class="glass-btn px-3 py-1.5 rounded-xl text-xs font-medium text-sky-400 flex items-center gap-2 hover:bg-sky-500/10 border-sky-500/30 transition">
+                    <i class="fa-brands fa-telegram text-sm"></i>
+                    <span class="hidden sm:inline">Канал Пермь</span>
+                </a>
+            </div>
+
+            <!-- Global Status Bar -->
+            <div class="flex items-center justify-between w-full md:w-auto gap-2 text-xs">
+                <div class="flex items-center gap-2 bg-slate-900/80 border border-slate-800 px-3 py-1.5 rounded-xl">
+                    <i class="fa-regular fa-clock text-sky-400"></i>
+                    <span class="text-slate-400 text-[10px] hidden sm:inline">Обновлено:</span>
+                    <span id="update-timer" class="font-mono text-sky-300 font-semibold">--:--:--</span>
+                </div>
+
+                <div class="flex items-center gap-2 bg-red-950/40 border border-red-800/40 px-3 py-1.5 rounded-xl">
+                    <i class="fa-solid fa-shield-cat text-red-400"></i>
+                    <span class="text-slate-400 text-[10px] hidden sm:inline">Тревога:</span>
+                    <span id="alert-count" class="font-bold font-mono text-red-400">0 регионов</span>
+                </div>
+
+                <div class="flex items-center gap-2 bg-emerald-950/40 border border-emerald-800/40 px-3 py-1.5 rounded-xl">
+                    <i class="fa-solid fa-plane-up text-emerald-400"></i>
+                    <span class="text-slate-400 text-[10px] hidden sm:inline">В воздухе:</span>
+                    <span id="uav-count" class="font-bold font-mono text-emerald-400">0 БПЛА</span>
+                </div>
+            </div>
+
+        </div>
+    </header>
+
+    <!-- Map Container -->
+    <div id="map" class="w-full h-full inset-0 z-0"></div>
+
+    <!-- Quick Location Navigation Bar (Center Bottom/Top Overlay) -->
+    <div class="absolute top-28 md:top-24 left-3 right-3 md:left-1/2 md:-translate-x-1/2 z-[1000] max-w-xl">
+        <div class="glass-panel p-2 rounded-2xl flex items-center justify-between gap-1.5 text-xs overflow-x-auto no-scrollbar">
+            <button onclick="focusPerm()" class="glass-btn px-3 py-1.5 rounded-xl text-sky-300 font-semibold flex items-center gap-1.5 shrink-0 bg-sky-950/50 border-sky-500/40">
+                <i class="fa-solid fa-location-crosshairs text-sky-400"></i>
+                Пермский край
+            </button>
+            <button onclick="focusCenter()" class="glass-btn px-3 py-1.5 rounded-xl text-slate-300 shrink-0">
+                Центр
+            </button>
+            <button onclick="focusSouth()" class="glass-btn px-3 py-1.5 rounded-xl text-slate-300 shrink-0">
+                Юг
+            </button>
+            <button onclick="resetMapView()" class="glass-btn px-3 py-1.5 rounded-xl text-slate-300 shrink-0">
+                Вся Россия
+            </button>
+
+            <select id="region-dropdown" class="bg-slate-900/90 border border-slate-700/80 text-xs text-slate-200 rounded-xl px-2.5 py-1.5 outline-none cursor-pointer max-w-[130px] shrink-0">
+                <option value="all">Выбор региона...</option>
+                <!-- Populated via JS -->
+            </select>
+        </div>
+    </div>
+
+    <!-- Toast Notification Banner -->
+    <div id="toast-banner" class="hidden absolute top-40 md:top-36 left-3 right-3 md:left-1/2 md:-translate-x-1/2 z-[1000] max-w-md">
+        <div class="glass-panel p-3 rounded-2xl border-amber-500/40 bg-amber-950/60 shadow-2xl flex items-center justify-between gap-3 toast-active">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-bell animate-bounce"></i>
+                </div>
+                <div>
+                    <div class="font-bold text-xs text-amber-200" id="toast-title">Внимание по Пермскому краю</div>
+                    <div class="text-[11px] text-amber-300/80" id="toast-desc">Обстановка спокойная. Системы радара работают в штатном режиме.</div>
+                </div>
+            </div>
+            <button onclick="closeToast()" class="text-amber-400/60 hover:text-amber-200 p-1"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+    </div>
+
+    <!-- Right Controls Toolbar -->
+    <div class="absolute right-3 top-44 md:top-36 z-[1000] flex flex-col gap-2">
+        <button id="btn-uav" onclick="toggleLayer('uav')" title="БПЛА на карте" class="glass-btn w-10 h-10 rounded-xl flex items-center justify-center text-emerald-400">
+            <i class="fa-solid fa-plane"></i>
+        </button>
+
+        <button id="btn-airports" onclick="toggleLayer('airports')" title="Аэропорты" class="glass-btn w-10 h-10 rounded-xl flex items-center justify-center text-sky-400">
+            <i class="fa-solid fa-plane-departure"></i>
+        </button>
+
+        <button id="btn-sim" onclick="toggleSimulation()" title="Симуляция движения" class="glass-btn w-10 h-10 rounded-xl flex items-center justify-center text-amber-400">
+            <i id="sim-icon" class="fa-solid fa-play"></i>
+        </button>
+
+        <button id="btn-ruler" onclick="toggleRuler()" title="Линейка (Измерение)" class="glass-btn w-10 h-10 rounded-xl flex items-center justify-center text-slate-300">
+            <i class="fa-solid fa-ruler-combined"></i>
+        </button>
+    </div>
+
+    <!-- Ruler Information Floating Tool -->
+    <div id="ruler-banner" class="hidden absolute top-44 left-1/2 -translate-x-1/2 z-[1000] glass-panel px-4 py-2 rounded-full text-xs flex items-center gap-3 border-sky-500/40">
+        <i class="fa-solid fa-ruler text-sky-400 animate-pulse"></i>
+        <span class="text-slate-200">Кликните по карте для расчета расстояния</span>
+        <span id="ruler-distance" class="font-mono text-sky-300 font-bold bg-sky-950/80 px-2 py-0.5 rounded-lg border border-sky-500/30">0 км</span>
+        <button onclick="clearRuler()" class="bg-red-900/60 hover:bg-red-800 text-red-200 px-2 py-0.5 rounded-lg text-[10px]">Сброс</button>
+    </div>
+
+    <!-- Bottom Collapsible Legend Panel -->
+    <div class="absolute bottom-4 left-3 right-3 md:left-4 md:right-auto z-[1000] max-w-sm">
+        <div class="glass-panel rounded-2xl overflow-hidden border-slate-800">
+            <button onclick="toggleLegend()" class="w-full p-3 flex items-center justify-between text-xs font-semibold text-slate-200 hover:bg-slate-800/40">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-shield-halved text-sky-400"></i>
+                    <span>Обозначения и легенда</span>
+                </div>
+                <i id="legend-arrow" class="fa-solid fa-chevron-up text-slate-400 transition-transform"></i>
+            </button>
+
+            <div id="legend-body" class="p-3 pt-0 space-y-2 border-t border-slate-800/80 text-[11px] text-slate-300">
+                <div class="grid grid-cols-2 gap-2 mt-2">
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded bg-red-500/30 border border-red-500"></span>
+                        <span>Опасность БПЛА / Атака</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded bg-amber-500/30 border border-amber-500"></span>
+                        <span>Повышенная готовность</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="w-3 h-3 rounded bg-emerald-500/30 border border-emerald-500"></span>
+                        <span>Обстановка спокойная</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-plane text-emerald-400"></i>
+                        <span>БПЛА / Борт на карте</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-plane-departure text-sky-400"></i>
+                        <span>Аэропорт</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-crosshairs text-sky-400"></i>
+                        <span>Центр Радара Пермь</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Logic Script -->
+    <script>
+        // Global Map Variables
+        let map;
+        let showUAV = true;
+        let showAirports = true;
+        let isSimulating = false;
+        let simInterval = null;
+
+        let isRulerActive = false;
+        let rulerPoints = [];
+        let rulerPolyline = null;
+        let rulerMarkers = [];
+
+        let uavMarkers = [];
+        let airportMarkers = [];
+        let regionLayers = [];
+
+        // Clean & Simplified Russian Region Geometries (No overlapping mesh artifacts)
+        const regionData = [
+            { id: "perm", name: "Пермский край", status: "safe", color: "#10b981", center: [58.01, 56.25], zoom: 7, lastUpdate: "Только что",
+              coords: [[[61.0, 53.5], [60.8, 59.0], [56.8, 58.8], [56.5, 54.0], [61.0, 53.5]]] },
+            
+            { id: "moscow", name: "Московский регион", status: "warning", color: "#f59e0b", center: [55.75, 37.61], zoom: 8, lastUpdate: "5 мин назад",
+              coords: [[[56.5, 36.0], [56.6, 38.8], [54.8, 39.2], [54.7, 36.2], [56.5, 36.0]]] },
+
+            { id: "belgorod", name: "Белгородская область", status: "danger", color: "#ef4444", center: [50.59, 36.58], zoom: 8, lastUpdate: "2 мин назад",
+              coords: [[[51.3, 35.8], [51.4, 39.0], [50.0, 38.8], [50.1, 35.8], [51.3, 35.8]]] },
+
+            { id: "kursk", name: "Курская область", status: "danger", color: "#ef4444", center: [51.73, 36.19], zoom: 8, lastUpdate: "3 мин назад",
+              coords: [[[52.4, 35.0], [52.3, 38.2], [51.0, 38.0], [51.0, 35.0], [52.4, 35.0]]] },
+
+            { id: "crimea", name: "Республика Крым", status: "warning", color: "#f59e0b", center: [45.3, 34.4], zoom: 8, lastUpdate: "12 мин назад",
+              coords: [[[46.2, 33.5], [45.5, 36.6], [44.3, 33.5], [46.2, 33.5]]] },
+
+            { id: "krasnodar", name: "Краснодарский край", status: "warning", color: "#f59e0b", center: [45.03, 38.97], zoom: 7, lastUpdate: "10 мин назад",
+              coords: [[[46.8, 37.5], [46.2, 41.0], [43.5, 40.2], [44.5, 36.6], [46.8, 37.5]]] },
+
+            { id: "sverdlovsk", name: "Свердловская область", status: "safe", color: "#10b981", center: [56.83, 60.60], zoom: 7, lastUpdate: "15 мин назад",
+              coords: [[[62.0, 58.0], [61.5, 66.0], [56.0, 65.0], [56.2, 57.5], [62.0, 58.0]]] },
+
+            { id: "tatarstan", name: "Республика Татарстан", status: "safe", color: "#10b981", center: [55.78, 49.12], zoom: 7, lastUpdate: "8 мин назад",
+              coords: [[[56.6, 47.5], [56.4, 54.0], [54.3, 53.8], [54.5, 47.8], [56.6, 47.5]]] }
+        ];
+
+        // Sample Air Objects
+        const uavObjects = [
+            { id: "БПЛА-01", lat: 58.2, lng: 55.5, heading: 85, status: "safe", speed: "140 км/ч", alt: "600 м", type: "Мониторинг" },
+            { id: "БПЛА-02", lat: 57.8, lng: 57.2, heading: 210, status: "safe", speed: "120 км/ч", alt: "450 м", type: "Патруль" },
+            { id: "БПЛА-09", lat: 51.2, lng: 36.8, heading: 45, status: "danger", speed: "180 км/ч", alt: "200 м", type: "Неопознан" },
+            { id: "БПЛА-12", lat: 50.8, lng: 37.5, heading: 130, status: "danger", speed: "160 км/ч", alt: "300 м", type: "Тревога" },
+            { id: "БПЛА-05", lat: 55.6, lng: 37.8, heading: 300, status: "warning", speed: "150 км/ч", alt: "800 м", type: "Разведка" }
+        ];
+
+        // Major Airports
+        const airportObjects = [
+            { name: "Большое Савино (PEE)", city: "Пермь", lat: 57.914, lng: 56.021, status: "Штатный режим" },
+            { name: "Шереметьево (SVO)", city: "Москва", lat: 55.972, lng: 37.414, status: "Штатный режим" },
+            { name: "Кольцово (SVX)", city: "Екатеринбург", lat: 56.743, lng: 60.803, status: "Штатный режим" },
+            { name: "Пашковский (KRR)", city: "Краснодар", lat: 45.034, lng: 39.170, status: "Ограничения" }
+        ];
+
+        // Initialization
+        window.onload = function() {
+            initMap();
+            populateRegionDropdown();
+            renderRegions();
+            renderAirports();
+            renderUAVs();
+            startClock();
+            updateHeaderStats();
+
+            // Show Welcome Toast
+            setTimeout(() => {
+                showToast("Радар БПЛА Пермь активен", "Мониторинг Пермского края и регионов России работает в штатном режиме.");
+            }, 1000);
+        };
+
+        // Initialize Map
+        function initMap() {
+            map = L.map('map', {
+                center: [58.01, 56.25], // Centered on Perm by default
+                zoom: 6,
+                minZoom: 3,
+                maxZoom: 17,
+                zoomControl: false,
+                attributionControl: false
+            });
+
+            // CartoDB Dark Matter Base Tiles
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                subdomains: 'abcd',
+                maxZoom: 19
+            }).addTo(map);
+
+            L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+            // Add Perm Radar Center Pulse Marker
+            const permPulseIcon = L.divIcon({
+                html: `
+                    <div class="relative flex items-center justify-center w-8 h-8">
+                        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                        <span class="relative inline-flex rounded-full h-4 w-4 bg-sky-500 border-2 border-white"></span>
+                    </div>
+                `,
+                className: 'perm-center-marker',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+            L.marker([58.01, 56.25], { icon: permPulseIcon }).addTo(map)
+                .bindPopup('<div class="p-2 text-xs font-bold text-sky-300">Центр мониторинга Радар БПЛА Пермь</div>');
+
+            map.on('click', onMapClick);
+        }
+
+        // Render Clean Regions
+        function renderRegions() {
+            regionData.forEach(reg => {
+                const geoJson = {
+                    "type": "Feature",
+                    "properties": { "name": reg.name, "status": reg.status, "lastUpdate": reg.lastUpdate },
+                    "geometry": { "type": "Polygon", "coordinates": reg.coords }
+                };
+
+                const strokeColor = reg.status === 'danger' ? '#ef4444' : reg.status === 'warning' ? '#f59e0b' : '#10b981';
+
+                const layer = L.geoJSON(geoJson, {
+                    style: {
+                        color: strokeColor,
+                        fillColor: reg.color,
+                        fillOpacity: 0.2,
+                        weight: 2,
+                        dashArray: '3, 6'
+                    },
+                    onEachFeature: (feature, l) => {
+                        l.on('mouseover', function() {
+                            this.setStyle({ fillOpacity: 0.45, weight: 3 });
+                        });
+                        l.on('mouseout', function() {
+                            this.setStyle({ fillOpacity: 0.2, weight: 2 });
+                        });
+                        l.on('click', function(e) {
+                            L.DomEvent.stopPropagation(e);
+                            map.flyTo(reg.center, reg.zoom, { duration: 1.2 });
+                        });
+
+                        const statusText = reg.status === 'danger' ? 'ОПАСНОСТЬ БПЛА / АТАКА' : reg.status === 'warning' ? 'ПОВЫШЕННАЯ ГОТОВНОСТЬ' : 'ОБСТАНОВКА СПОКОЙНАЯ';
+                        const statusClass = reg.status === 'danger' ? 'text-red-400' : reg.status === 'warning' ? 'text-amber-400' : 'text-emerald-400';
+
+                        l.bindPopup(`
+                            <div class="p-2.5 text-xs space-y-1">
+                                <div class="font-bold text-sm text-white border-b border-slate-700/80 pb-1">${reg.name}</div>
+                                <div class="text-slate-300 mt-1">Статус: <span class="font-bold ${statusClass}">${statusText}</span></div>
+                                <div class="text-[10px] text-slate-400">Обновлено: ${reg.lastUpdate}</div>
+                            </div>
+                        `);
+                    }
+                }).addTo(map);
+
+                regionLayers.push(layer);
+            });
+        }
+
+        // Render UAV Markers
+        function renderUAVs() {
+            uavMarkers.forEach(m => map.removeLayer(m));
+            uavMarkers = [];
+
+            if (!showUAV) return;
+
+            uavObjects.forEach(obj => {
+                const colorClass = obj.status === 'danger' ? 'text-red-500' : obj.status === 'warning' ? 'text-amber-400' : 'text-emerald-400';
+                const pulseEffect = obj.status === 'danger' ? 'radar-danger-pulse' : '';
+
+                const iconHtml = `
+                    <div class="plane-icon-wrapper ${pulseEffect}" style="transform: rotate(${obj.heading}deg);">
+                        <i class="fa-solid fa-plane ${colorClass} text-lg drop-shadow-[0_0_8px_rgba(0,0,0,0.8)]"></i>
+                    </div>
+                `;
+
+                const customIcon = L.divIcon({
+                    html: iconHtml,
+                    className: 'uav-marker',
+                    iconSize: [30, 30],
+                    iconAnchor: [15, 15]
+                });
+
+                const marker = L.marker([obj.lat, obj.lng], { icon: customIcon }).addTo(map);
+                marker.bindPopup(`
+                    <div class="p-2 text-xs space-y-1">
+                        <div class="font-bold text-white border-b border-slate-700 pb-1 flex justify-between items-center">
+                            <span>Объект ${obj.id}</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded ${obj.status === 'danger' ? 'bg-red-900/80 text-red-200' : 'bg-emerald-900/80 text-emerald-200'}">${obj.type}</span>
+                        </div>
+                        <div class="text-slate-300">Скорость: <span class="font-mono text-sky-300">${obj.speed}</span></div>
+                        <div class="text-slate-300">Высота: <span class="font-mono text-sky-300">${obj.alt}</span></div>
+                        <div class="text-slate-300">Курс: <span class="font-mono text-sky-300">${obj.heading}°</span></div>
+                    </div>
+                `);
+
+                marker.objData = obj;
+                uavMarkers.push(marker);
+            });
+        }
+
+        // Render Airport Markers
+        function renderAirports() {
+            airportMarkers.forEach(m => map.removeLayer(m));
+            airportMarkers = [];
+
+            if (!showAirports) return;
+
+            airportObjects.forEach(ap => {
+                const iconHtml = `
+                    <div class="w-7 h-7 rounded-lg bg-slate-900/90 border border-sky-400/80 text-sky-400 flex items-center justify-center shadow-lg">
+                        <i class="fa-solid fa-plane-departure text-xs"></i>
+                    </div>
+                `;
+                const icon = L.divIcon({
+                    html: iconHtml,
+                    className: 'ap-marker',
+                    iconSize: [28, 28],
+                    iconAnchor: [14, 14]
+                });
+
+                const marker = L.marker([ap.lat, ap.lng], { icon: icon }).addTo(map);
+                marker.bindPopup(`
+                    <div class="p-2 text-xs">
+                        <div class="font-bold text-sky-300">${ap.name}</div>
+                        <div class="text-slate-400">${ap.city}</div>
+                        <div class="mt-1 text-slate-300">Режим: <span class="text-emerald-400 font-semibold">${ap.status}</span></div>
+                    </div>
+                `);
+                airportMarkers.push(marker);
+            });
+        }
+
+        // Navigation Focus Controls
+        function focusPerm() {
+            map.flyTo([58.01, 56.25], 7, { duration: 1.2 });
+            showToast("Фокус: Пермский край", "Отображаются актуальные данные радара Пермского региона.");
+        }
+        function focusCenter() {
+            map.flyTo([55.75, 37.61], 7, { duration: 1.2 });
+        }
+        function focusSouth() {
+            map.flyTo([45.03, 38.97], 7, { duration: 1.2 });
+        }
+        function resetMapView() {
+            map.flyTo([58.0, 50.0], 4, { duration: 1.5 });
+        }
+
+        // Populate Dropdown
+        function populateRegionDropdown() {
+            const select = document.getElementById('region-dropdown');
+            regionData.forEach(reg => {
+                const opt = document.createElement('option');
+                opt.value = reg.id;
+                opt.textContent = reg.name;
+                select.appendChild(opt);
+            });
+
+            select.addEventListener('change', (e) => {
+                const id = e.target.value;
+                const reg = regionData.find(r => r.id === id);
+                if (reg) {
+                    map.flyTo(reg.center, reg.zoom, { duration: 1.2 });
+                }
+            });
+        }
+
+        // Toggle Layers
+        function toggleLayer(type) {
+            if (type === 'uav') {
+                showUAV = !showUAV;
+                document.getElementById('btn-uav').classList.toggle('text-emerald-400');
+                document.getElementById('btn-uav').classList.toggle('text-slate-500');
+                renderUAVs();
+            } else if (type === 'airports') {
+                showAirports = !showAirports;
+                document.getElementById('btn-airports').classList.toggle('text-sky-400');
+                document.getElementById('btn-airports').classList.toggle('text-slate-500');
+                renderAirports();
+            }
+        }
+
+        // Live Simulation Movement
+        function toggleSimulation() {
+            isSimulating = !isSimulating;
+            const icon = document.getElementById('sim-icon');
+
+            if (isSimulating) {
+                icon.className = "fa-solid fa-pause text-amber-400";
+                simInterval = setInterval(() => {
+                    uavMarkers.forEach(marker => {
+                        const obj = marker.objData;
+                        const rad = (obj.heading * Math.PI) / 180;
+                        const step = 0.015;
+
+                        obj.lat += Math.cos(rad) * step;
+                        obj.lng += Math.sin(rad) * step;
+
+                        marker.setLatLng([obj.lat, obj.lng]);
+                    });
+                }, 800);
+            } else {
+                icon.className = "fa-solid fa-play text-amber-400";
+                clearInterval(simInterval);
+            }
+        }
+
+        // Ruler Tool Implementation
+        function toggleRuler() {
+            isRulerActive = !isRulerActive;
+            const banner = document.getElementById('ruler-banner');
+            banner.classList.toggle('hidden', !isRulerActive);
+            if (!isRulerActive) clearRuler();
+        }
+
+        function onMapClick(e) {
+            if (!isRulerActive) return;
+
+            rulerPoints.push(e.latlng);
+
+            const circle = L.circleMarker(e.latlng, {
+                radius: 4,
+                color: '#0ea5e9',
+                fillColor: '#0ea5e9',
+                fillOpacity: 1
+            }).addTo(map);
+            rulerMarkers.push(circle);
+
+            if (rulerPoints.length > 1) {
+                if (rulerPolyline) {
+                    rulerPolyline.setLatLngs(rulerPoints);
+                } else {
+                    rulerPolyline = L.polyline(rulerPoints, { color: '#0ea5e9', weight: 3, dashArray: '5, 8' }).addTo(map);
+                }
+
+                let dist = 0;
+                for (let i = 0; i < rulerPoints.length - 1; i++) {
+                    dist += rulerPoints[i].distanceTo(rulerPoints[i+1]);
+                }
+                document.getElementById('ruler-distance').innerText = `${(dist / 1000).toFixed(1)} км`;
+            }
+        }
+
+        function clearRuler() {
+            rulerPoints = [];
+            if (rulerPolyline) { map.removeLayer(rulerPolyline); rulerPolyline = null; }
+            rulerMarkers.forEach(m => map.removeLayer(m));
+            rulerMarkers = [];
+            document.getElementById('ruler-distance').innerText = '0 км';
+        }
+
+        // Toast Messages
+        function showToast(title, desc) {
+            document.getElementById('toast-title').innerText = title;
+            document.getElementById('toast-desc').innerText = desc;
+            document.getElementById('toast-banner').classList.remove('hidden');
+        }
+
+        function closeToast() {
+            document.getElementById('toast-banner').classList.add('hidden');
+        }
+
+        // Collapsible Legend
+        function toggleLegend() {
+            document.getElementById('legend-body').classList.toggle('hidden');
+            document.getElementById('legend-arrow').classList.toggle('rotate-180');
+        }
+
+        // Clock & Counters
+        function startClock() {
+            setInterval(() => {
+                const now = new Date();
+                document.getElementById('update-timer').innerText = now.toTimeString().split(' ')[0];
+            }, 1000);
+        }
+
+        function updateHeaderStats() {
+            document.getElementById('alert-count').innerText = `${regionData.filter(r => r.status === 'danger').length} регионов`;
+            document.getElementById('uav-count').innerText = `${uavObjects.length} БПЛА`;
+        }
+    </script>
+</body>
+</html>
